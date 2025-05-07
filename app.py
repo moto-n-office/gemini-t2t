@@ -146,9 +146,8 @@ async def get_available_models():
     # 利用可能なモデルのリスト
     available_models = [
         {"id": "gemini-2.0-flash-001", "description": "Gemini 2.0 Flash - 高速レスポンス向き"},
-        {"id": "gemini-2.0-pro-001", "description": "Gemini 2.0 Pro - 高性能・複雑なタスク向き"},
-        {"id": "gemini-1.5-flash-001", "description": "Gemini 1.5 Flash - 以前のバージョン"},
-        {"id": "gemini-1.5-pro-001", "description": "Gemini 1.5 Pro - 以前のバージョン"}
+        {"id": "gemini-2.5-flash-preview-04-17", "description": "Gemini-2.5-flash最新プレビューバージョン"},
+        {"id": "gemini-2.5-pro-preview-05-06", "description": "Gemini 2.5 Pro - 最新プレビューバージョン"}
     ]
     return {"models": available_models, "default_model": DEFAULT_GEMINI_MODEL}
 
