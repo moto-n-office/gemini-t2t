@@ -1,10 +1,10 @@
 import os
 import json
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-from typing import Optional, Union, Dict, Any
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
 import vertexai
-from vertexai.generative_models import GenerativeModel, Part
+from vertexai.generative_models import GenerativeModel, Content, Part
 
 # 環境変数の取得
 PROJECT_ID = os.getenv("PROJECT_ID")
@@ -37,13 +37,13 @@ async def generate_content(request: GeminiRequest):
         model = GenerativeModel(GEMINI_MODEL)
         
         # JSONモードの設定
-        system_instruction = None
+        contents = []
         
         if request.json_mode:
+            # システムメッセージの作成
             if request.json_schema:
-                # JSONスキーマが指定されている場合
                 schema_str = json.dumps(request.json_schema)
-                system_instruction = f"""
+                system_message = f"""
                 You must respond with a valid JSON object that adheres to the following schema:
                 {schema_str}
                 
@@ -51,11 +51,18 @@ async def generate_content(request: GeminiRequest):
                 following the JSON schema above without deviation.
                 """
             else:
-                # JSONスキーマが指定されていない場合
-                system_instruction = """
+                system_message = """
                 You must respond with a valid JSON object. 
                 Do not include any explanations, only provide a RFC8259 compliant JSON response.
                 """
+                
+            # システムメッセージをプロンプトの前に追加
+            contents = [
+                system_message,
+                request.prompt
+            ]
+        else:
+            contents = [request.prompt]
         
         # リクエスト設定
         generation_config = {
@@ -63,11 +70,10 @@ async def generate_content(request: GeminiRequest):
             "max_output_tokens": request.max_output_tokens
         }
         
-        # コンテンツ生成
+        # コンテンツ生成（システムメッセージとプロンプトを結合）
         response = model.generate_content(
-            request.prompt,
-            generation_config=generation_config,
-            system_instruction=system_instruction
+            contents=contents,
+            generation_config=generation_config
         )
         
         # レスポンス処理
