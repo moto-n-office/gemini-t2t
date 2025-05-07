@@ -29,7 +29,8 @@ class GeminiRequest(BaseModel):
 # レスポンス用のモデル定義
 class GeminiResponse(BaseModel):
     text: str
-    model: str  # 使用されたモデルを返す
+    model: str  # 使用されたモデル
+    tokens: Optional[Dict[str, int]] = None  # トークン数情報
     json_data: Optional[Dict[str, Any]] = None
 
 @app.post("/generate", response_model=GeminiResponse)
@@ -81,8 +82,43 @@ async def generate_content(request: GeminiRequest):
             generation_config=generation_config
         )
         
+        # トークン数情報の取得
+        token_info = {}
+        try:
+            # 使用情報を取得（利用可能な場合）
+            usage_metadata = getattr(response, 'usage_metadata', None)
+            if usage_metadata:
+                # 入力と出力のトークン数を取得
+                token_info = {
+                    "input_tokens": getattr(usage_metadata, 'prompt_token_count', None),
+                    "output_tokens": getattr(usage_metadata, 'candidates_token_count', None),
+                    "total_tokens": getattr(usage_metadata, 'total_token_count', None)
+                }
+            else:
+                # 概算トークン数の計算（APIが直接提供していない場合）
+                # 日本語では1文字約1.5トークン程度だが、正確ではない
+                input_text = ' '.join(contents)
+                estimated_input_tokens = len(input_text) * 1.5
+                estimated_output_tokens = len(response.text) * 1.5
+                
+                token_info = {
+                    "input_tokens_estimated": int(estimated_input_tokens),
+                    "output_tokens_estimated": int(estimated_output_tokens),
+                    "total_tokens_estimated": int(estimated_input_tokens + estimated_output_tokens),
+                    "note": "正確なトークン数はAPIから提供されていないため、概算値です"
+                }
+        except Exception as e:
+            token_info = {
+                "error": f"トークン数の取得に失敗しました: {str(e)}",
+                "note": "レスポンスは正常に生成されましたが、トークン情報の取得には失敗しました"
+            }
+        
         # レスポンス処理
-        result = GeminiResponse(text=response.text, model=model_name)
+        result = GeminiResponse(
+            text=response.text, 
+            model=model_name,
+            tokens=token_info
+        )
         
         # JSONモードの場合、JSON解析を試みる
         if request.json_mode:
@@ -108,7 +144,6 @@ async def generate_content(request: GeminiRequest):
 @app.get("/models")
 async def get_available_models():
     # 利用可能なモデルのリスト
-    # 注: 実際には動的に取得する方法もありますが、ここでは静的リストとして提供
     available_models = [
         {"id": "gemini-2.0-flash-001", "description": "Gemini 2.0 Flash - 高速レスポンス向き"},
         {"id": "gemini-2.0-pro-001", "description": "Gemini 2.0 Pro - 高性能・複雑なタスク向き"},
