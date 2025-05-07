@@ -1,15 +1,15 @@
 import os
 import json
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List
 import vertexai
-from vertexai.generative_models import GenerativeModel, Content, Part
+from vertexai.generative_models import GenerativeModel
 
 # 環境変数の取得
 PROJECT_ID = os.getenv("PROJECT_ID")
 REGION = os.getenv("REGION", "us-central1")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-001")
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-001")
 
 # Vertex AIの初期化
 vertexai.init(project=PROJECT_ID, location=REGION)
@@ -20,6 +20,7 @@ app = FastAPI(title="Gemini API Proxy")
 # リクエスト用のモデル定義
 class GeminiRequest(BaseModel):
     prompt: str
+    model: Optional[str] = None  # モデル名をパラメータとして追加
     temperature: float = 0.7
     max_output_tokens: int = 2048
     json_mode: bool = False
@@ -28,13 +29,17 @@ class GeminiRequest(BaseModel):
 # レスポンス用のモデル定義
 class GeminiResponse(BaseModel):
     text: str
+    model: str  # 使用されたモデルを返す
     json_data: Optional[Dict[str, Any]] = None
 
 @app.post("/generate", response_model=GeminiResponse)
 async def generate_content(request: GeminiRequest):
     try:
+        # モデル名の決定（リクエストで指定がなければデフォルト値を使用）
+        model_name = request.model if request.model else DEFAULT_GEMINI_MODEL
+        
         # Gemini モデルの初期化
-        model = GenerativeModel(GEMINI_MODEL)
+        model = GenerativeModel(model_name)
         
         # JSONモードの設定
         contents = []
@@ -70,14 +75,14 @@ async def generate_content(request: GeminiRequest):
             "max_output_tokens": request.max_output_tokens
         }
         
-        # コンテンツ生成（システムメッセージとプロンプトを結合）
+        # コンテンツ生成
         response = model.generate_content(
             contents=contents,
             generation_config=generation_config
         )
         
         # レスポンス処理
-        result = GeminiResponse(text=response.text)
+        result = GeminiResponse(text=response.text, model=model_name)
         
         # JSONモードの場合、JSON解析を試みる
         if request.json_mode:
@@ -98,6 +103,19 @@ async def generate_content(request: GeminiRequest):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"生成エラー: {str(e)}")
+
+# 利用可能なモデルの取得エンドポイント
+@app.get("/models")
+async def get_available_models():
+    # 利用可能なモデルのリスト
+    # 注: 実際には動的に取得する方法もありますが、ここでは静的リストとして提供
+    available_models = [
+        {"id": "gemini-2.0-flash-001", "description": "Gemini 2.0 Flash - 高速レスポンス向き"},
+        {"id": "gemini-2.0-pro-001", "description": "Gemini 2.0 Pro - 高性能・複雑なタスク向き"},
+        {"id": "gemini-1.5-flash-001", "description": "Gemini 1.5 Flash - 以前のバージョン"},
+        {"id": "gemini-1.5-pro-001", "description": "Gemini 1.5 Pro - 以前のバージョン"}
+    ]
+    return {"models": available_models, "default_model": DEFAULT_GEMINI_MODEL}
 
 @app.get("/health")
 async def health_check():
